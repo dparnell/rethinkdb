@@ -4,6 +4,11 @@ version=3.30.33.16
 
 src_url=http://commondatastorage.googleapis.com/chromium-browser-official/v8-$version.tar.bz2
 
+pkg_fetch () {
+    pkg_fetch_archive
+    find "$src_dir"/third_party/icu/* -maxdepth 0 -not -name 'icu.gyp*' -print0 | xargs -0 rm -rf
+}
+
 pkg_install-include () {
     rm -rf "$install_dir/include"
     mkdir -p "$install_dir/include"
@@ -13,30 +18,17 @@ pkg_install-include () {
 
 pkg_install () {
     pkg_copy_src_to_build
-    if ! python --version 2>&1  | grep --quiet 'Python 2'; then
-        pybin=$build_dir/pybin
-        mkdir -p "$pybin"
-        rm -f "$pybin/python"
-        ln -s "$(which python2)" "$pybin/python"
-        export PATH=$pybin:$PATH
-    fi
     mkdir -p "$install_dir/lib"
     CXX=${CXX:-g++} # as defined by the v8 Makefile
     host=$($CXX -dumpmachine)
-    makeflags=
     case ${host%%-*} in
         i?86)   arch=ia32 ;;
         x86_64) arch=x64 ;;
         arm*)   arch=arm ;;
         *)      arch=native ;;
     esac
-    case "$($CXX -dumpversion)" in
-        4.4*)
-            # Some versions of GCC 4.4 crash with "pure virtual method called" unless these flag are passed
-            CXXFLAGS="${CXXFLAGS:-} -fno-function-sections -fno-inline-functions"
-    esac
     mode=release
-    pkg_make $arch.$mode CXX=$CXX LINK=$CXX LINK.target=$CXX werror=no $makeflags CXXFLAGS="${CXXFLAGS:-} -Wno-error"
+    pkg_make $arch.$mode CXX=$CXX LINK=$CXX LINK.target=$CXX werror=no GYPFLAGS=-Duse_system_icu=1
     for lib in `find "$build_dir/out/$arch.$mode" -maxdepth 1 -name \*.a` `find "$build_dir/out/$arch.$mode/obj.target" -name \*.a`; do
         name=`basename $lib`
         cp $lib "$install_dir/lib/${name/.$arch/}"
@@ -47,7 +39,14 @@ pkg_install () {
 pkg_link-flags () {
     # These are the necessary libraries recommended by the docs:
     # https://developers.google.com/v8/get_started#hello
-    for lib in libv8_{base,libbase,snapshot,libplatform} libicu{i18n,uc,data}; do
+    # ICU is linked separately
+    for lib in libv8_{base,libbase,snapshot,libplatform}; do
         echo "$install_dir/lib/$lib.a"
     done
+}
+
+pkg_depends () {
+    if will_fetch icu; then
+        echo icu
+    fi
 }

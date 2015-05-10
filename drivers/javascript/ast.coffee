@@ -1165,6 +1165,10 @@ class UUID extends RDBOp
     tt: protoTermType.UUID
     st: 'uuid'
 
+class Materialize extends RDBOp
+    tt: protoTermType.MATERIALIZE
+    mt: 'materialize'
+
 
 # All top level exported functions
 
@@ -1317,6 +1321,8 @@ rethinkdb.circle = aropt (cen, rad, opts) -> new Circle opts, cen, rad
 rethinkdb.uuid = (args...) -> new UUID {}, args...
 
 rethinkdb.range = (args...) -> new Range {}, args...
+
+rethinkdb.materialize = (args...) -> new Materialize {}, args...
 
 # Export all names defined on rethinkdb
 module.exports = rethinkdb

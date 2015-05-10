@@ -592,6 +592,55 @@ private:
     virtual const char *name() const { return "range"; }
 };
 
+class materialize_term_t : public op_term_t {
+public:
+    materialize_term_t(compile_env_t *env, const protob_t<const Term> &term)
+        : op_term_t(env, term, argspec_t(1)) { }
+
+  virtual ~materialize_term_t() {
+    if(wrapper) {
+      delete wrapper;
+    }
+  }
+
+private:
+  mutable class materialized_wrapper {
+  public:
+    materialized_wrapper(datum_t a_datum) : array(std::move(a_datum)) {}
+    datum_t array;
+
+
+  } *wrapper = NULL;
+
+
+    virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
+      if(!wrapper) {
+        if(args->num_args() == 1) {
+          scoped_ptr_t<val_t> arg = args->arg(env, 0);
+          if(arg->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
+            counted_t<datum_stream_t> seq = arg->as_seq(env->env);
+            datum_t array = seq->as_array(env->env);
+
+            wrapper = new materialized_wrapper(array);
+          } else {
+            rfail(base_exc_t::GENERIC,
+                  "materialize may only be called with a sequence");
+          }
+        } else {
+          rfail(base_exc_t::GENERIC, "A sequence is required to materialize");
+        }
+      }
+
+      return new_val(wrapper->array);
+    }
+    // materialize is not deterministic
+    virtual bool is_deterministic() const {
+        return false;
+    }
+    virtual const char *name() const { return "materialize"; }
+};
+
+
 counted_t<term_t> make_minval_term(
         compile_env_t *env, const protob_t<const Term> &term) {
     return make_counted<minval_term_t>(env, term);
@@ -681,5 +730,11 @@ counted_t<term_t> make_range_term(
         compile_env_t *env, const protob_t<const Term> &term) {
     return make_counted<range_term_t>(env, term);
 }
+
+counted_t<term_t> make_materialize_term(
+        compile_env_t *env, const protob_t<const Term> &term) {
+    return make_counted<materialize_term_t>(env, term);
+}
+
 
 } // namespace ql

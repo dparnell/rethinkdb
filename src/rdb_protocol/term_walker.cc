@@ -305,6 +305,7 @@ private:
         case Term::FLOOR:
         case Term::CEIL:
         case Term::ROUND:
+        case Term::MATERIALIZE:
             return false;
         default: unreachable();
         }
@@ -489,6 +490,7 @@ private:
         case Term::FLOOR:
         case Term::CEIL:
         case Term::ROUND:
+        case Term::MATERIALIZE:
             return false;
         default: unreachable();
         }

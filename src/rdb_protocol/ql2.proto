@@ -745,6 +745,8 @@ message Term {
         // Constants for specifying key ranges
         MINVAL = 180;
         MAXVAL = 181;
+
+        MATERIALIZE = 5000;
     }
     optional TermType type = 1;
 

@@ -619,9 +619,9 @@ private:
           scoped_ptr_t<val_t> arg = args->arg(env, 0);
           if(arg->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
             counted_t<datum_stream_t> seq = arg->as_seq(env->env);
-            datum_t array = seq->as_array(env->env);
+            scoped_ptr_t<val_t> array = seq->to_array(env->env);
 
-            wrapper = new materialized_wrapper(array);
+            wrapper = new materialized_wrapper(array->as_datum());
           } else {
             rfail(base_exc_t::GENERIC,
                   "materialize may only be called with a sequence");

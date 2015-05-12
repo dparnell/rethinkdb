@@ -272,6 +272,8 @@ counted_t<term_t> make_range_term(
     compile_env_t *env, const protob_t<const Term> &term);
 counted_t<term_t> make_materialize_term(
     compile_env_t *env, const protob_t<const Term> &term);
+counted_t<term_t> make_sort_term(
+    compile_env_t *env, const protob_t<const Term> &term);
 
 // sindex.cc
 counted_t<term_t> make_sindex_create_term(

@@ -256,6 +256,12 @@ class RDBVal extends TermBase
 
         new OrderBy opts, @, attrs...
 
+    materialize: () ->
+      new Materialize {}, @
+
+    sort: () ->
+      new Sort {}, @
+
     # Geo operations
     toGeojson: (args...) -> new ToGeojson {}, @, args...
     distance: aropt (g, opts) -> new Distance opts, @, g
@@ -1169,6 +1175,10 @@ class Materialize extends RDBOp
     tt: protoTermType.MATERIALIZE
     mt: 'materialize'
 
+class Sort extends RDBOp
+    tt: protoTermType.SORT
+    mt: 'sort'
+
 
 # All top level exported functions
 
@@ -1323,6 +1333,7 @@ rethinkdb.uuid = (args...) -> new UUID {}, args...
 rethinkdb.range = (args...) -> new Range {}, args...
 
 rethinkdb.materialize = (args...) -> new Materialize {}, args...
+rethinkdb.sort = (args...) -> new Sort {}, args...
 
 # Export all names defined on rethinkdb
 module.exports = rethinkdb

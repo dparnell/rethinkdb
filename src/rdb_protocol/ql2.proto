@@ -747,6 +747,7 @@ message Term {
         MAXVAL = 181;
 
         MATERIALIZE = 5000;
+        SORT = 5001;
     }
     optional TermType type = 1;
 

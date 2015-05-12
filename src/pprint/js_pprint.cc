@@ -910,6 +910,7 @@ static void pprint_update_reminder() {
     case Term::CEIL:
     case Term::ROUND:
     case Term::MATERIALIZE:
+    case Term::SORT:
         break;
     }
     Datum_DatumType d = Datum::R_NULL;

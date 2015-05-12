@@ -586,37 +586,8 @@ private:
                 required_els.push_back(v->as_datum());
             }
         }
-        // This needs to be a terminal batch to avoid pathological behavior in
-        // the worst case.
-        batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);
-        {
-            profile::sampler_t sampler("Evaluating elements in contains.",
-                                       env->env->trace);
-            datum_t el;
-            while (el = seq->next(env->env, batchspec), el.has()) {
-                for (auto it = required_els.begin(); it != required_els.end(); ++it) {
-                    if (*it == el) {
-                        std::swap(*it, required_els.back());
-                        required_els.pop_back();
-                        break; // Bag semantics for contains.
-                    }
-                }
-                for (auto it = required_funcs.begin();
-                     it != required_funcs.end();
-                     ++it) {
-                    if ((*it)->call(env->env, el)->as_bool()) {
-                        std::swap(*it, required_funcs.back());
-                        required_funcs.pop_back();
-                        break; // Bag semantics for contains.
-                    }
-                }
-                if (required_els.size() == 0 && required_funcs.size() == 0) {
-                    return new_val_bool(true);
-                }
-                sampler.new_sample();
-            }
-        }
-        return new_val_bool(false);
+
+        return new_val_bool(seq->contains(env->env, required_els, required_funcs));
     }
     virtual const char *name() const { return "contains"; }
 };

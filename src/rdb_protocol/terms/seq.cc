@@ -595,7 +595,7 @@ private:
 class materialize_term_t : public op_term_t {
 public:
     materialize_term_t(compile_env_t *env, const protob_t<const Term> &term)
-        : op_term_t(env, term, argspec_t(1)) { }
+      : op_term_t(env, term, argspec_t(1)) { }
 
   virtual ~materialize_term_t() {
     if(wrapper) {
@@ -604,17 +604,15 @@ public:
   }
 
 private:
-  mutable class materialized_wrapper {
-  public:
-    materialized_wrapper(datum_t a_datum) : array(std::move(a_datum)) {}
-    datum_t array;
-
-
-  } *wrapper = NULL;
-
+    mutable class materialized_wrapper {
+    public:
+      materialized_wrapper(datum_t a_datum) : array(std::move(a_datum)) {}
+      datum_t array;
+    } *wrapper = NULL;
 
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
       if(!wrapper) {
+        printf("materializing\n");
         if(args->num_args() == 1) {
           scoped_ptr_t<val_t> arg = args->arg(env, 0);
           if(arg->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
@@ -623,14 +621,18 @@ private:
 
             wrapper = new materialized_wrapper(array->as_datum());
           } else {
-            rfail(base_exc_t::GENERIC,
-                  "materialize may only be called with a sequence");
+              if(arg->get_type().is_convertible(val_t::type_t::DATUM)) {
+                wrapper = new materialized_wrapper(arg->as_datum());
+              } else {
+                  rfail(base_exc_t::GENERIC,
+                        "materialize may only be called with a sequence or datum");
+              }
           }
         } else {
           rfail(base_exc_t::GENERIC, "A sequence is required to materialize");
         }
       }
-
+      printf("Returning materialized data\n");
       return new_val(wrapper->array);
     }
     // materialize is not deterministic
@@ -640,6 +642,48 @@ private:
     virtual const char *name() const { return "materialize"; }
 };
 
+class sort_term_t : public op_term_t {
+public:
+    sort_term_t(compile_env_t *env, const protob_t<const Term> &term)
+          : op_term_t(env, term, argspec_t(1)) { }
+
+private:
+    virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
+      if(args->num_args() == 1) {
+        printf("Sorting...\n");
+        scoped_ptr_t<val_t> arg = args->arg(env, 0);
+        if(arg->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
+          batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);
+          {
+              profile::sampler_t sampler("Sorting elements for contains.",
+                                         env->env->trace);
+              counted_t<datum_stream_t> seq = arg->as_seq(env->env);
+
+              std::vector<datum_t> rows = std::vector<datum_t>();
+              datum_t el;
+              while (el = seq->next(env->env, batchspec), el.has()) {
+                rows.push_back(std::move(el));
+                sampler.new_sample();
+              }
+              counted_t<datum_stream_t> result = make_counted<vector_datum_stream_t>(backtrace(), std::move(rows), boost::none);
+              result->sort();
+
+              return new_val(result->to_array(env->env)->as_datum());
+          }
+        } else {
+          rfail(base_exc_t::GENERIC,
+                "sort may only be called with a sequence");
+        }
+      } else {
+        rfail(base_exc_t::GENERIC, "A sequence is required to materialize");
+      }
+    }
+    // sort is not deterministic
+    virtual bool is_deterministic() const {
+        return false;
+    }
+    virtual const char *name() const { return "sort"; }
+};
 
 counted_t<term_t> make_minval_term(
         compile_env_t *env, const protob_t<const Term> &term) {
@@ -734,6 +778,11 @@ counted_t<term_t> make_range_term(
 counted_t<term_t> make_materialize_term(
         compile_env_t *env, const protob_t<const Term> &term) {
     return make_counted<materialize_term_t>(env, term);
+}
+
+counted_t<term_t> make_sort_term(
+        compile_env_t *env, const protob_t<const Term> &term) {
+    return make_counted<sort_term_t>(env, term);
 }
 
 

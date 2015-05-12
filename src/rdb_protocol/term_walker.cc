@@ -306,6 +306,7 @@ private:
         case Term::CEIL:
         case Term::ROUND:
         case Term::MATERIALIZE:
+        case Term::SORT:
             return false;
         default: unreachable();
         }
@@ -491,6 +492,7 @@ private:
         case Term::CEIL:
         case Term::ROUND:
         case Term::MATERIALIZE:
+        case Term::SORT:
             return false;
         default: unreachable();
         }

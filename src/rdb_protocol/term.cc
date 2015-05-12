@@ -204,6 +204,7 @@ counted_t<const term_t> compile_term(compile_env_t *env, const protob_t<const Te
     case Term::ROUND:              return make_round_term(env, t);
 
     case Term::MATERIALIZE:        return make_materialize_term(env, t);
+    case Term::SORT:               return make_sort_term(env, t);
     default: unreachable();
     }
     unreachable();

@@ -865,6 +865,49 @@ bool datum_stream_t::batch_cache_exhausted() const {
     return batch_cache_index >= batch_cache.size();
 }
 
+void datum_stream_t::sort() {
+    rfail(base_exc_t::GENERIC, "sort may only be called on arrays");
+}
+
+bool datum_stream_t::contains(env_t *env, std::vector<datum_t> required_els,
+                              std::vector<counted_t<const func_t> > required_funcs) {
+
+  printf("datum_stream_t::contains\n");
+    // This needs to be a terminal batch to avoid pathological behavior in
+    // the worst case.
+    batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env);
+    {
+        profile::sampler_t sampler("Evaluating elements in contains.",
+                                       env->trace);
+        datum_t el;
+        while (el = next(env, batchspec), el.has()) {
+          for (auto it = required_els.begin(); it != required_els.end(); ++it) {
+            if (*it == el) {
+              std::swap(*it, required_els.back());
+              required_els.pop_back();
+              break; // Bag semantics for contains.
+            }
+          }
+          for (auto it = required_funcs.begin();
+               it != required_funcs.end();
+               ++it) {
+            if ((*it)->call(env, el)->as_bool()) {
+              std::swap(*it, required_funcs.back());
+              required_funcs.pop_back();
+              break; // Bag semantics for contains.
+            }
+          }
+          if (required_els.size() == 0 && required_funcs.size() == 0) {
+            return true;
+          }
+          sampler.new_sample();
+        }
+    }
+    return false;
+}
+
+
+
 void eager_datum_stream_t::add_transformation(
     transform_variant_t &&tv, backtrace_id_t bt) {
     ops.push_back(make_op(tv));
@@ -1638,5 +1681,60 @@ std::vector<changespec_t> vector_datum_stream_t::get_changespecs() {
         rfail(base_exc_t::GENERIC, "%s", "Cannot call `changes` on this stream.");
     }
 }
+
+void vector_datum_stream_t::sort() {
+    std::sort(rows.begin(), rows.end());
+    _sorted = true;
+}
+
+bool vector_datum_stream_t::contains(env_t *env, std::vector<datum_t> required_els,
+                              std::vector<counted_t<const func_t> > required_funcs) {
+
+  printf("vector_datum_stream_t::contains: %d\n", _sorted);
+    if(_sorted) {
+        // This needs to be a terminal batch to avoid pathological behavior in
+        // the worst case.
+        batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env);
+        {
+          profile::sampler_t sampler("Evaluating elements in sorted contains.",
+                                     env->trace);
+
+          for (auto it = required_els.begin(); it != required_els.end(); ++it) {
+            if (std::binary_search (rows.begin(), rows.end(), *it)) {
+              std::swap(*it, required_els.back());
+              required_els.pop_back();
+            }
+          }
+
+          if(required_els.size() == 0) {
+              if(required_funcs.size() > 0) {
+                  datum_t el;
+                  while (el = next(env, batchspec), el.has()) {
+                      for (auto it = required_funcs.begin();
+                           it != required_funcs.end();
+                           ++it) {
+                          if ((*it)->call(env, el)->as_bool()) {
+                              std::swap(*it, required_funcs.back());
+                              required_funcs.pop_back();
+                              break; // Bag semantics for contains.
+                          }
+                      }
+                      if (required_funcs.size() == 0) {
+                          return true;
+                      }
+                      sampler.new_sample();
+                  }
+              } else {
+                  return true;
+              }
+          }
+
+        }
+        return false;
+    }
+
+    return datum_stream_t::contains(env, required_els, required_funcs);
+}
+
 
 } // namespace ql

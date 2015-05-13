@@ -619,7 +619,10 @@ private:
 
     mutable class materialized_wrapper {
     public:
-      materialized_wrapper(datum_t a_datum) : array(std::move(a_datum)) {}
+      materialized_wrapper(datum_t a_datum) : has_seq(false), array(std::move(a_datum)) {}
+      materialized_wrapper(counted_t<datum_stream_t> a_seq) : has_seq(true), seq(std::move(a_seq)) {}
+      bool has_seq;
+      counted_t<datum_stream_t> seq;
       datum_t array;
     } *wrapper = NULL;
 
@@ -635,9 +638,8 @@ private:
           scoped_ptr_t<val_t> arg = real->eval(env);
           if(arg->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
               counted_t<datum_stream_t> seq = arg->as_seq(env->env);
-              scoped_ptr_t<val_t> array = seq->to_array(env->env);
 
-              wrapper = new materialized_wrapper(array->as_datum());
+              wrapper = new materialized_wrapper(seq);
           } else {
               if(arg->get_type().is_convertible(val_t::type_t::DATUM)) {
                 wrapper = new materialized_wrapper(arg->as_datum());
@@ -648,6 +650,9 @@ private:
           }
       }
 
+      if(wrapper->has_seq) {
+        return new_val(env->env, wrapper->seq);
+      }
       return new_val(wrapper->array);
     }
 
@@ -676,10 +681,11 @@ private:
                 rows.push_back(std::move(el));
                 sampler.new_sample();
               }
+
               counted_t<datum_stream_t> result = make_counted<vector_datum_stream_t>(backtrace(), std::move(rows), boost::none);
               result->sort();
 
-              return new_val(result->to_array(env->env)->as_datum());
+              return new_val(env->env, result);
           }
         } else {
           rfail(base_exc_t::GENERIC,

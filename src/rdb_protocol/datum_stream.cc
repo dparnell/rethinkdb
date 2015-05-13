@@ -1691,10 +1691,7 @@ void vector_datum_stream_t::sort() {
 bool vector_datum_stream_t::contains(env_t *env, std::vector<datum_t> *required_els,
                               std::vector<counted_t<const func_t> > *required_funcs) {
 
-  printf("vector_datum_stream_t::contains: %d\n", _sorted);
     if(_sorted) {
-        // This needs to be a terminal batch to avoid pathological behavior in
-        // the worst case.
         batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env);
         {
           profile::sampler_t sampler("Evaluating elements in sorted contains.",

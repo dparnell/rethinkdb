@@ -110,8 +110,8 @@ public:
 
     virtual void sort();
 
-    virtual bool contains(env_t *env, std::vector<datum_t> required_els,
-                          std::vector<counted_t<const func_t> > required_funcs);
+    virtual bool contains(env_t *env, std::vector<datum_t> *required_els,
+                          std::vector<counted_t<const func_t> > *required_funcs);
 protected:
     bool batch_cache_exhausted() const;
     void check_not_grouped(const char *msg);
@@ -178,6 +178,13 @@ private:
     }
     virtual bool is_infinite() const {
         return source->is_infinite();
+    }
+    virtual void sort() {
+        source->sort();
+    }
+    virtual bool contains(env_t *env, std::vector<datum_t> *required_els,
+                          std::vector<counted_t<const func_t> > *required_funcs) {
+        return source->contains(env, required_els, required_funcs);
     }
 
 protected:
@@ -755,8 +762,8 @@ private:
     bool is_array() const;
     bool is_infinite() const;
     virtual void sort();
-    virtual bool contains(env_t *env, std::vector<datum_t> required_els,
-                          std::vector<counted_t<const func_t> > required_funcs);
+    virtual bool contains(env_t *env, std::vector<datum_t> *required_els,
+                          std::vector<counted_t<const func_t> > *required_funcs);
 
     std::vector<changespec_t> get_changespecs();
 

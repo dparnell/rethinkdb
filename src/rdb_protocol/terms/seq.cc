@@ -592,10 +592,21 @@ private:
     virtual const char *name() const { return "range"; }
 };
 
-class materialize_term_t : public op_term_t {
+class materialize_term_t : public term_t {
 public:
-    materialize_term_t(compile_env_t *env, const protob_t<const Term> &term)
-      : op_term_t(env, term, argspec_t(1)) { }
+  materialize_term_t(compile_env_t *env, const protob_t<const Term> &term) : term_t(term) {
+    int args_size = term->args_size();
+    rcheck(args_size == 1,
+           base_exc_t::GENERIC,
+           strprintf("Expected 1 but found %d.", args_size));
+
+    Term a = term->args(0);
+    const protob_t<Term> arg = make_counted_term();
+    arg->Swap(&a);
+
+    real = compile_term(env, arg);
+  }
+
 
   virtual ~materialize_term_t() {
     if(wrapper) {
@@ -604,22 +615,29 @@ public:
   }
 
 private:
+    counted_t<const term_t> real;
+
     mutable class materialized_wrapper {
     public:
       materialized_wrapper(datum_t a_datum) : array(std::move(a_datum)) {}
       datum_t array;
     } *wrapper = NULL;
 
-    virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
-      if(!wrapper) {
-        printf("materializing\n");
-        if(args->num_args() == 1) {
-          scoped_ptr_t<val_t> arg = args->arg(env, 0);
-          if(arg->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
-            counted_t<datum_stream_t> seq = arg->as_seq(env->env);
-            scoped_ptr_t<val_t> array = seq->to_array(env->env);
+    virtual void accumulate_captures(var_captures_t *) const {
+      // do nothing
+    }
+    virtual bool is_deterministic() const {
+        return false;
+    }
 
-            wrapper = new materialized_wrapper(array->as_datum());
+    virtual scoped_ptr_t<val_t> term_eval(scope_env_t *env, eval_flags_t) const {
+      if(!wrapper) {
+          scoped_ptr_t<val_t> arg = real->eval(env);
+          if(arg->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
+              counted_t<datum_stream_t> seq = arg->as_seq(env->env);
+              scoped_ptr_t<val_t> array = seq->to_array(env->env);
+
+              wrapper = new materialized_wrapper(array->as_datum());
           } else {
               if(arg->get_type().is_convertible(val_t::type_t::DATUM)) {
                 wrapper = new materialized_wrapper(arg->as_datum());
@@ -628,17 +646,11 @@ private:
                         "materialize may only be called with a sequence or datum");
               }
           }
-        } else {
-          rfail(base_exc_t::GENERIC, "A sequence is required to materialize");
-        }
       }
-      printf("Returning materialized data\n");
+
       return new_val(wrapper->array);
     }
-    // materialize is not deterministic
-    virtual bool is_deterministic() const {
-        return false;
-    }
+
     virtual const char *name() const { return "materialize"; }
 };
 
@@ -650,7 +662,6 @@ public:
 private:
     virtual scoped_ptr_t<val_t> eval_impl(scope_env_t *env, args_t *args, eval_flags_t) const {
       if(args->num_args() == 1) {
-        printf("Sorting...\n");
         scoped_ptr_t<val_t> arg = args->arg(env, 0);
         if(arg->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
           batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);

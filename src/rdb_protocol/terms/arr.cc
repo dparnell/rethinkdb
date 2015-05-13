@@ -587,7 +587,7 @@ private:
             }
         }
 
-        return new_val_bool(seq->contains(env->env, required_els, required_funcs));
+        return new_val_bool(seq->contains(env->env, &required_els, &required_funcs));
     }
     virtual const char *name() const { return "contains"; }
 };

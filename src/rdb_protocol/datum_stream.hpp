@@ -109,6 +109,7 @@ public:
     virtual void accumulate_all(env_t *env, eager_acc_t *acc) = 0;
 
     virtual void sort();
+    virtual bool is_sorted()  { return false; }
 
     virtual bool contains(env_t *env, std::vector<datum_t> *required_els,
                           std::vector<counted_t<const func_t> > *required_funcs);
@@ -747,8 +748,6 @@ public:
             backtrace_id_t bt,
             std::vector<datum_t> &&_rows,
             boost::optional<ql::changefeed::keyspec_t> &&_changespec);
-
-    virtual bool is_sorted()  { return _sorted; }
 private:
     datum_t next(env_t *env, const batchspec_t &bs);
     datum_t next_impl(env_t *);
@@ -761,13 +760,9 @@ private:
     virtual feed_type_t cfeed_type() const;
     bool is_array() const;
     bool is_infinite() const;
-    virtual void sort();
-    virtual bool contains(env_t *env, std::vector<datum_t> *required_els,
-                          std::vector<counted_t<const func_t> > *required_funcs);
 
     std::vector<changespec_t> get_changespecs();
 
-    mutable bool _sorted = false;
     std::vector<datum_t> rows;
     size_t index;
     boost::optional<ql::changefeed::keyspec_t> changespec;

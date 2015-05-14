@@ -592,6 +592,131 @@ private:
     virtual const char *name() const { return "range"; }
 };
 
+class materialized_datum_stream_t : public eager_datum_stream_t {
+public:
+  materialized_datum_stream_t(
+    backtrace_id_t bt,
+    std::vector<datum_t> &&_rows,
+    boost::optional<ql::changefeed::keyspec_t> &&_changespec,
+    bool rows_sorted) : eager_datum_stream_t(bt),
+                   rows(std::move(_rows)),
+                   index(0),
+                   changespec(std::move(_changespec)),
+                   sorted(rows_sorted) { }
+
+
+  virtual bool is_sorted()  { return sorted; }
+private:
+  datum_t next(env_t *, const batchspec_t &) {
+    if (index < rows.size()) {
+      return rows[index++];
+    } else {
+      return datum_t();
+    }
+  }
+
+  std::vector<datum_t> next_raw_batch(env_t *env, const batchspec_t &bs) {
+    std::vector<datum_t> v;
+    batcher_t batcher = bs.to_batcher();
+    datum_t d;
+    while (d = next(env, bs), d.has()) {
+      batcher.note_el(d);
+      v.push_back(d);
+      if (batcher.should_send_batch()) {
+        break;
+      }
+    }
+    return v;
+  }
+
+  void add_transformation(
+    transform_variant_t &&tv, backtrace_id_t bt) {
+    if (changespec) {
+      if (auto *rng = boost::get<changefeed::keyspec_t::range_t>(&changespec->spec)) {
+        rng->transforms.push_back(tv);
+      }
+    }
+    eager_datum_stream_t::add_transformation(std::move(tv), bt);
+  }
+
+  bool is_exhausted() const {
+    return index == rows.size();
+  }
+
+  feed_type_t cfeed_type() const {
+    return feed_type_t::not_feed;
+  }
+
+  bool is_array() const { return false; }
+  bool is_infinite() const { return false; }
+  void sort() {
+    std::sort(rows.begin(), rows.end());
+    sorted = true;
+  }
+
+  bool contains(env_t *env, std::vector<datum_t> *required_els,
+                std::vector<counted_t<const func_t> > *required_funcs) {
+    if(sorted) {
+        batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env);
+        {
+          profile::sampler_t sampler("Evaluating elements in sorted contains.",
+                                     env->trace);
+
+          size_t L = required_els->size();
+          auto it_el = required_els->begin();
+          for (size_t i = 0; i<L; i++, ++it_el) {
+            if (std::binary_search (rows.begin(), rows.end(), *it_el)) {
+              std::swap(*it_el, required_els->back());
+              required_els->pop_back();
+            }
+          }
+
+          if(required_els->size() == 0) {
+              if(required_funcs->size() > 0) {
+                  datum_t el;
+                  while (el = next(env, batchspec), el.has()) {
+                      for (auto it = required_funcs->begin();
+                           it != required_funcs->end();
+                           ++it) {
+                          if ((*it)->call(env, el)->as_bool()) {
+                              std::swap(*it, required_funcs->back());
+                              required_funcs->pop_back();
+                              break; // Bag semantics for contains.
+                          }
+                      }
+                      if (required_funcs->size() == 0) {
+                          return true;
+                      }
+                      sampler.new_sample();
+                  }
+              } else {
+                  return true;
+              }
+          }
+
+        }
+        return false;
+    }
+
+    return datum_stream_t::contains(env, required_els, required_funcs);
+  }
+
+  std::vector<changespec_t> get_changespecs() {
+    if (changespec) {
+        return std::vector<changespec_t>{
+            changespec_t(*changespec, counted_from_this())};
+    } else {
+        rfail(base_exc_t::GENERIC, "%s", "Cannot call `changes` on this stream.");
+    }
+  }
+
+    std::vector<datum_t> rows;
+    size_t index;
+    boost::optional<ql::changefeed::keyspec_t> changespec;
+    mutable bool sorted;
+};
+
+
 class materialize_term_t : public term_t {
 public:
   materialize_term_t(compile_env_t *env, const protob_t<const Term> &term) : term_t(term) {
@@ -637,9 +762,33 @@ private:
       if(!wrapper) {
           scoped_ptr_t<val_t> arg = real->eval(env);
           if(arg->get_type().is_convertible(val_t::type_t::SEQUENCE)) {
-              counted_t<datum_stream_t> seq = arg->as_seq(env->env);
+              batchspec_t batchspec = batchspec_t::user(batch_type_t::TERMINAL, env->env);
+              {
+                profile::sampler_t sampler("Materializing sequence",
+                                           env->env->trace);
 
-              wrapper = new materialized_wrapper(seq);
+                counted_t<datum_stream_t> seq = arg->as_seq(env->env);
+                if(seq->is_infinite()) {
+                  rfail(base_exc_t::GENERIC,
+                        "materialize may not be called on an infinite sequence");
+                }
+
+                if(seq->is_sorted()) {
+                  wrapper = new materialized_wrapper(seq);
+                } else {
+                  std::vector<datum_t> rows = std::vector<datum_t>();
+                  datum_t el;
+                  while (el = seq->next(env->env, batchspec), el.has()) {
+                    rows.push_back(std::move(el));
+                    sampler.new_sample();
+                  }
+
+                  counted_t<datum_stream_t> result = make_counted<materialized_datum_stream_t>(backtrace(), std::move(rows), boost::none, seq->is_sorted());
+
+                  wrapper = new materialized_wrapper(result);
+                }
+              }
+
           } else {
               if(arg->get_type().is_convertible(val_t::type_t::DATUM)) {
                 wrapper = new materialized_wrapper(arg->as_datum());
@@ -653,7 +802,9 @@ private:
       if(wrapper->has_seq) {
         return new_val(env->env, wrapper->seq);
       }
-      return new_val(wrapper->array);
+
+      datum_t tmp = wrapper->array;
+      return new_val(tmp);
     }
 
     virtual const char *name() const { return "materialize"; }
@@ -674,7 +825,10 @@ private:
               profile::sampler_t sampler("Sorting elements for contains.",
                                          env->env->trace);
               counted_t<datum_stream_t> seq = arg->as_seq(env->env);
-
+              if(seq->is_infinite()) {
+                rfail(base_exc_t::GENERIC,
+                      "sort may not be called on an infinite sequence");
+              }
               std::vector<datum_t> rows = std::vector<datum_t>();
               datum_t el;
               while (el = seq->next(env->env, batchspec), el.has()) {
@@ -682,7 +836,7 @@ private:
                 sampler.new_sample();
               }
 
-              counted_t<datum_stream_t> result = make_counted<vector_datum_stream_t>(backtrace(), std::move(rows), boost::none);
+              counted_t<datum_stream_t> result = make_counted<materialized_datum_stream_t>(backtrace(), std::move(rows), boost::none, false);
               result->sort();
 
               return new_val(env->env, result);

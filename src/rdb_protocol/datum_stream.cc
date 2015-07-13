@@ -879,7 +879,7 @@ bool datum_stream_t::batch_cache_exhausted() const {
 }
 
 void datum_stream_t::sort() {
-    rfail(base_exc_t::GENERIC, "sort may only be called on arrays");
+    rfail(base_exc_t::LOGIC, "sort may only be called on arrays");
 }
 
 bool datum_stream_t::contains(env_t *env, std::vector<datum_t> *required_els,

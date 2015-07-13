@@ -706,7 +706,7 @@ private:
         return std::vector<changespec_t>{
             changespec_t(*changespec, counted_from_this())};
     } else {
-        rfail(base_exc_t::GENERIC, "%s", "Cannot call `changes` on this stream.");
+        rfail(base_exc_t::LOGIC, "%s", "Cannot call `changes` on this stream.");
     }
   }
 
@@ -722,7 +722,7 @@ public:
   materialize_term_t(compile_env_t *env, const protob_t<const Term> &term) : term_t(term) {
     int args_size = term->args_size();
     rcheck(args_size == 1,
-           base_exc_t::GENERIC,
+           base_exc_t::LOGIC,
            strprintf("Expected 1 but found %d.", args_size));
 
     Term a = term->args(0);
@@ -769,7 +769,7 @@ private:
 
                 counted_t<datum_stream_t> seq = arg->as_seq(env->env);
                 if(seq->is_infinite()) {
-                  rfail(base_exc_t::GENERIC,
+                  rfail(base_exc_t::LOGIC,
                         "materialize may not be called on an infinite sequence");
                 }
 
@@ -793,7 +793,7 @@ private:
               if(arg->get_type().is_convertible(val_t::type_t::DATUM)) {
                 wrapper = new materialized_wrapper(arg->as_datum());
               } else {
-                  rfail(base_exc_t::GENERIC,
+                  rfail(base_exc_t::LOGIC,
                         "materialize may only be called with a sequence or datum");
               }
           }
@@ -826,7 +826,7 @@ private:
                                          env->env->trace);
               counted_t<datum_stream_t> seq = arg->as_seq(env->env);
               if(seq->is_infinite()) {
-                rfail(base_exc_t::GENERIC,
+                rfail(base_exc_t::LOGIC,
                       "sort may not be called on an infinite sequence");
               }
               std::vector<datum_t> rows = std::vector<datum_t>();
@@ -842,11 +842,11 @@ private:
               return new_val(env->env, result);
           }
         } else {
-          rfail(base_exc_t::GENERIC,
+          rfail(base_exc_t::LOGIC,
                 "sort may only be called with a sequence");
         }
       } else {
-        rfail(base_exc_t::GENERIC, "A sequence is required to materialize");
+        rfail(base_exc_t::LOGIC, "A sequence is required to materialize");
       }
     }
     // sort is not deterministic

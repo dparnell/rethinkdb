@@ -49,13 +49,13 @@ public:
     type_t get_type() const { return type; }
     Response::ErrorType get_error_type() const {
         switch (type) {
-        case LOGIC:            return Response::LOGIC;
+        case EMPTY_USER:       // fallthru (this only bubbles up here if misused)
+        case LOGIC:            return Response::QUERY_LOGIC;
         case INTERNAL:         return Response::INTERNAL;
-        case RESOURCE:         return Response::RESOURCE;
+        case RESOURCE:         return Response::RESOURCE_LIMIT;
         case OP_FAILED:        return Response::OP_FAILED;
         case OP_INDETERMINATE: return Response::OP_INDETERMINATE;
-        case USER:             // fallthru
-        case EMPTY_USER:       return Response::USER;
+        case USER:             return Response::USER;
         case NON_EXISTENCE:    return Response::NON_EXISTENCE;
         default: unreachable();
         }

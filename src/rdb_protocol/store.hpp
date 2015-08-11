@@ -122,6 +122,19 @@ public:
             signal_t *interruptor)
         THROWS_ONLY(interrupted_exc_t);
 
+    cluster_version_t metainfo_version(read_token_t *token,
+                                       signal_t *interruptor);
+
+    void migrate_metainfo(
+            order_token_t order_token,
+            write_token_t *token,
+            cluster_version_t from,
+            cluster_version_t to,
+            const std::function<binary_blob_t(const region_t &,
+                                              const binary_blob_t &)> &cb,
+            signal_t *interruptor)
+        THROWS_ONLY(interrupted_exc_t);
+
     void read(
             DEBUG_ONLY(const metainfo_checker_t& metainfo_checker, )
             const read_t &read,
@@ -151,6 +164,7 @@ public:
             const region_map_t<state_timestamp_t> &start_point,
             backfill_pre_item_producer_t *pre_item_producer,
             backfill_item_consumer_t *item_consumer,
+            backfill_item_memory_tracker_t *memory_tracker,
             signal_t *interruptor)
         THROWS_ONLY(interrupted_exc_t);
     continue_bool_t receive_backfill(

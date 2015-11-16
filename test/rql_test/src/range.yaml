@@ -1,7 +1,7 @@
 desc: Tests RQL range generation
 tests:
     - cd: r.range().type_of()
-      ot: "'STREAM'"
+      ot: 'STREAM'
 
     - cd: r.range().limit(4)
       ot: [0, 1, 2, 3]
@@ -44,6 +44,9 @@ tests:
       ot: err("ReqlQueryLogicError", "Cannot use an infinite stream with an aggregation function (`reduce`, `count`, etc.) or coerce it to an array.", [])
 
     - cd: r.range().coerce_to("ARRAY")
+      ot: err("ReqlQueryLogicError", "Cannot use an infinite stream with an aggregation function (`reduce`, `count`, etc.) or coerce it to an array.", [])
+
+    - cd: r.range().coerce_to("OBJECT")
       ot: err("ReqlQueryLogicError", "Cannot use an infinite stream with an aggregation function (`reduce`, `count`, etc.) or coerce it to an array.", [])
 
     - cd: r.range(4).count()

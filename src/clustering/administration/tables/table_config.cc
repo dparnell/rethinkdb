@@ -592,7 +592,10 @@ void table_config_artificial_table_backend_t::do_modify(
         new_config.config.shards.size(), old_config.shard_scheme, interruptor,
         &new_config.shard_scheme);
 
-    table_meta_client->set_config(table_id, new_config, interruptor);
+    table_config_and_shards_change_t table_config_and_shards_change(
+        table_config_and_shards_change_t::set_table_config_and_shards_t{ new_config });
+    table_meta_client->set_config(
+        table_id, table_config_and_shards_change, interruptor);
 }
 
 void table_config_artificial_table_backend_t::do_create(
@@ -656,8 +659,12 @@ bool table_config_artificial_table_backend_t::write_row(
 
             if (new_value_inout->has()) {
                 table_config_and_shards_t old_config;
-                table_meta_client->get_config(
-                    table_id, &interruptor_on_home, &old_config);
+                try {
+                    table_meta_client->get_config(
+                        table_id, &interruptor_on_home, &old_config);
+                } CATCH_OP_ERRORS(old_db_name, old_basic_config.name, error_out,
+                    "Failed to retrieve the table's configuration, it was not changed.",
+                    "Failed to retrieve the table's configuration, it was not changed.")
 
                 table_config_t new_config;
                 server_name_map_t new_server_names;

@@ -6,7 +6,8 @@ import socket
 import struct
 
 from . import ql2_pb2 as p
-from .net import decodeUTF, Query, Response, Cursor, maybe_profile, convert_pseudo
+from .ast import ReQLDecoder
+from .net import decodeUTF, Query, Response, Cursor, maybe_profile
 from .net import Connection as ConnectionBase
 from .errors import *
 
@@ -104,11 +105,11 @@ class AsyncioCursor(Cursor):
                 raise self.error
             with translate_timeout_errors():
                 yield from waiter(asyncio.shield(self.new_response))
-        return convert_pseudo(self.items.pop(0), self.query)
+        return self.items.popleft()
 
     def _maybe_fetch_batch(self):
         if self.error is None and \
-           len(self.items) <= self.threshold and \
+           len(self.items) < self.threshold and \
            self.outstanding_requests == 0:
             self.outstanding_requests += 1
             asyncio.async(self.conn._parent._continue(self))
@@ -193,11 +194,13 @@ class ConnectionInstance(object):
             yield from self.run_query(noreply, False)
 
         self._streamwriter.close()
+        yield from self._reader_task
+
         return None
 
     @asyncio.coroutine
     def run_query(self, query, noreply):
-        self._streamwriter.write(query.serialize())
+        self._streamwriter.write(query.serialize(self._parent._get_json_encoder(query)))
         if noreply:
             return None
 
@@ -217,26 +220,26 @@ class ConnectionInstance(object):
                 buf = yield from self._streamreader.readexactly(12)
                 (token, length,) = struct.unpack("<qL", buf)
                 buf = yield from self._streamreader.readexactly(length)
-                res = Response(token, buf)
 
                 cursor = self._cursor_cache.get(token)
                 if cursor is not None:
-                    cursor._extend(res)
+                    cursor._extend(buf)
                 elif token in self._user_queries:
                     # Do not pop the query from the dict until later, so
                     # we don't lose track of it in case of an exception
                     query, future = self._user_queries[token]
+                    res = Response(token, buf,
+                                   self._parent._get_json_decoder(query))
                     if res.type == pResponse.SUCCESS_ATOM:
-                        value = convert_pseudo(res.data[0], query)
-                        future.set_result(maybe_profile(value, res))
+                        future.set_result(maybe_profile(res.data[0], res))
                     elif res.type in (pResponse.SUCCESS_SEQUENCE,
                                       pResponse.SUCCESS_PARTIAL):
-                        cursor = AsyncioCursor(self, query)
-                        self._cursor_cache[token] = cursor
-                        cursor._extend(res)
+                        cursor = AsyncioCursor(self, query, res)
                         future.set_result(maybe_profile(cursor, res))
                     elif res.type == pResponse.WAIT_COMPLETE:
                         future.set_result(None)
+                    elif res.type == pResponse.SERVER_INFO:
+                        future.set_result(res.data[0])
                     else:
                         future.set_exception(res.make_error(query))
                     del self._user_queries[token]

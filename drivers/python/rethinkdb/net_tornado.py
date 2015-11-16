@@ -11,10 +11,10 @@ from tornado.ioloop import IOLoop
 from tornado.concurrent import Future
 
 from . import ql2_pb2 as p
-from .net import decodeUTF, Query, Response, Cursor, maybe_profile, convert_pseudo
+from .ast import ReQLDecoder
+from .net import decodeUTF, Query, Response, Cursor, maybe_profile
 from .net import Connection as ConnectionBase
 from .errors import *
-from .ast import RqlQuery, RqlTopLevelQuery, DB
 
 __all__ = ['Connection']
 
@@ -74,7 +74,7 @@ class TornadoCursor(Cursor):
             if self.error is not None:
                 raise self.error
             yield with_absolute_timeout(deadline, self.new_response)
-        raise gen.Return(convert_pseudo(self.items.pop(0), self.query))
+        raise gen.Return(self.items.popleft())
 
 
 class ConnectionInstance(object):
@@ -174,7 +174,7 @@ class ConnectionInstance(object):
 
     @gen.coroutine
     def run_query(self, query, noreply):
-        yield self._stream.write(query.serialize())
+        yield self._stream.write(query.serialize(self._parent._get_json_encoder(query)))
         if noreply:
             raise gen.Return(None)
 
@@ -196,26 +196,26 @@ class ConnectionInstance(object):
                 buf = yield self._stream.read_bytes(12)
                 (token, length,) = struct.unpack("<qL", buf)
                 buf = yield self._stream.read_bytes(length)
-                res = Response(token, buf)
 
                 cursor = self._cursor_cache.get(token)
                 if cursor is not None:
-                    cursor._extend(res)
+                    cursor._extend(buf)
                 elif token in self._user_queries:
                     # Do not pop the query from the dict until later, so
                     # we don't lose track of it in case of an exception
                     query, future = self._user_queries[token]
+                    res = Response(token, buf,
+                                   self._parent._get_json_decoder(query))
                     if res.type == pResponse.SUCCESS_ATOM:
-                        value = convert_pseudo(res.data[0], query)
-                        future.set_result(maybe_profile(value, res))
+                        future.set_result(maybe_profile(res.data[0], res))
                     elif res.type in (pResponse.SUCCESS_SEQUENCE,
                                       pResponse.SUCCESS_PARTIAL):
-                        cursor = TornadoCursor(self, query)
-                        self._cursor_cache[token] = cursor
-                        cursor._extend(res)
+                        cursor = TornadoCursor(self, query, res)
                         future.set_result(maybe_profile(cursor, res))
                     elif res.type == pResponse.WAIT_COMPLETE:
                         future.set_result(None)
+                    elif res.type == pResponse.SERVER_INFO:
+                        future.set_result(res.data[0])
                     else:
                         future.set_exception(res.make_error(query))
                     del self._user_queries[token]
@@ -251,6 +251,11 @@ class Connection(ConnectionBase):
     @gen.coroutine
     def noreply_wait(self, *args, **kwargs):
         res = yield ConnectionBase.noreply_wait(self, *args, **kwargs)
+        raise gen.Return(res)
+
+    @gen.coroutine
+    def server(self, *args, **kwargs):
+        res = yield ConnectionBase.server(self, *args, **kwargs)
         raise gen.Return(res)
 
     @gen.coroutine

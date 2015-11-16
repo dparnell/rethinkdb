@@ -3,6 +3,8 @@
 __all__ = ["ReqlCursorEmpty",
            "ReqlError",
            "ReqlCompileError",
+           "ReqlDriverCompileError",
+           "ReqlServerCompileError",
            "ReqlRuntimeError",
            "ReqlQueryLogicError",
            "ReqlNonExistenceError",
@@ -31,8 +33,10 @@ try:
 
     def convertForPrint(inputString):
         if type(inputString) == unicode:
-            return inputString.encode(sys.stdout.encoding or 'utf-8',
-                                      'replace')
+            encoding = 'utf-8'
+            if hasattr(sys.stdout, 'encoding') and sys.stdout.encoding:
+                encoding = sys.stdout.encoding
+            return inputString.encode(encoding or 'utf-8', 'replace')
         else:
             return str(inputString)
 except NameError:
@@ -78,6 +82,12 @@ class ReqlCompileError(ReqlError):
     pass
 
 RqlCompileError = ReqlCompileError
+
+class ReqlDriverCompileError(ReqlCompileError):
+    pass
+
+class ReqlServerCompileError(ReqlCompileError):
+    pass
 
 
 class ReqlRuntimeError(ReqlError):

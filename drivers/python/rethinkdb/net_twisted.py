@@ -11,7 +11,8 @@ from twisted.internet.endpoints import TCP4ClientEndpoint
 from twisted.internet.error import TimeoutError
 
 from . import ql2_pb2 as p
-from .net import decodeUTF, Query, Response, Cursor, maybe_profile, convert_pseudo
+from .ast import ReQLDecoder
+from .net import decodeUTF, Query, Response, Cursor, maybe_profile
 from .net import Connection as ConnectionBase
 from .errors import *
 
@@ -162,8 +163,8 @@ class CursorItems(DeferredQueue):
 
 class TwistedCursor(Cursor):
     def __init__(self, *args, **kwargs):
+        kwargs.setdefault('items_type', CursorItems)
         super(TwistedCursor, self).__init__(*args, **kwargs)
-        self.items = CursorItems()
         self.waiting = list()
 
     def _extend(self, res):
@@ -216,7 +217,6 @@ class TwistedCursor(Cursor):
                 raise errback.value
 
         item_defer = self.items.get()
-        item_defer.addCallback(lambda x: convert_pseudo(x, self.query))
 
         if timeout is not None:
             item_defer.addErrback(raise_timeout)
@@ -240,24 +240,23 @@ class ConnectionInstance(object):
 
     def _handleResponse(self, token, data):
         try:
-            res = Response(token, data)
-
             cursor = self._cursor_cache.get(token)
             if cursor is not None:
-                cursor._extend(res)
+                cursor._extend(data)
             elif token in self._user_queries:
                 query, deferred = self._user_queries[token]
+                res = Response(token, data,
+                               self._parent._get_json_decoder(query))
                 if res.type == pResponse.SUCCESS_ATOM:
-                    value = convert_pseudo(res.data[0], query)
-                    deferred.callback(maybe_profile(value, res))
+                    deferred.callback(maybe_profile(res.data[0], res))
                 elif res.type in (pResponse.SUCCESS_SEQUENCE,
                                   pResponse.SUCCESS_PARTIAL):
-                    cursor = TwistedCursor(self, query)
-                    self._cursor_cache[token] = cursor
-                    cursor._extend(res)
+                    cursor = TwistedCursor(self, query, res)
                     deferred.callback(maybe_profile(cursor, res))
                 elif res.type == pResponse.WAIT_COMPLETE:
                     deferred.callback(None)
+                elif res.type == pResponse.SERVER_INFO:
+                    deferred.callback(res.data[0])
                 else:
                     deferred.errback(res.make_error(query))
                 del self._user_queries[token]
@@ -337,13 +336,14 @@ class ConnectionInstance(object):
         if not noreply:
             self._user_queries[query.token] = (query, response_defer)
         # Send the query
-        self._connection.transport.write(query.serialize())
+        self._connection.transport.write(query.serialize(self._parent._get_json_encoder(query)))
 
         if noreply:
             returnValue(None)
         else:
             res = yield response_defer
             returnValue(res)
+
 
 class Connection(ConnectionBase):
 
@@ -364,6 +364,11 @@ class Connection(ConnectionBase):
     @inlineCallbacks
     def noreply_wait(self, *args, **kwargs):
         res = yield super(Connection, self).noreply_wait(*args, **kwargs)
+        returnValue(res)
+
+    @inlineCallbacks
+    def server(self, *args, **kwargs):
+        res = yield super(Connection, self).server(*args, **kwargs)
         returnValue(res)
 
     @inlineCallbacks
